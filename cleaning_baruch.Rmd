@@ -1,0 +1,80 @@
+---
+title: "Getting clean data"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r setup}
+library(tidyverse)
+library(abbyyR)
+```
+
+
+Searching for [James Meredith](https://en.wikipedia.org/wiki/James_Meredith) in the [Baruch Ticker](http://ticker.baruch.cuny.edu/) turns an editorial on page 3 of the [November 20, 1962](http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf) issue.
+
+```{r}
+pdfpath <- tempfile("sample.pdf")
+download.file('http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf', pdfpath, mode='wb')
+```
+
+```{r out.width="400px"}
+pngpath <- tempfile("sample.png")
+page <- pdftools::pdf_render_page(pdfpath, page = 3)
+png::writePNG(page, pngpath)
+knitr::include_graphics(pngpath)
+```
+
+```{r}
+pagetext <-  pdftools::pdf_text(pdfpath)[3] 
+pagetext %>%
+  stringr::str_sub(10000, 12500) %>%
+  cat
+```
+
+```{r}
+pagetext %>%
+  stringr::str_split(" ") %>%
+  unlist %>%
+  length
+```
+
+```{r}
+pagetext %>%
+  stringr::str_split(" ") %>%
+  unlist %>% {
+    tibble(
+      token = .,
+      len = map(., length) %>% unlist
+    )
+  } %>%
+  group_by(token) %>%
+  count %>%
+  arrange(-n) %>%
+  head(30)
+```
+
+```{r}
+pagetext %>%
+  stringr::str_split("\n") %>%
+  unlist %>%
+  head(3) %>%
+  stringr::str_wrap(80)
+```
+
+
+
+```{r}
+pagetext %>%
+  stringr::str_split("\r\n") %>%
+  unlist %>% {
+    tibble(
+      line = .,
+      len = stringr::str_length(stringr::str_trim(.))
+    )
+  }
+  group_by(len) %>%
+  count %>%
+  arrange(-len) %>%
+  head(30)
+```
