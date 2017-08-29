@@ -8,10 +8,55 @@ output:
 ```{r setup}
 library(tidyverse)
 library(abbyyR)
+library(stringr)
+library(rvest)
+library(httr)
+library(urltools)
 ```
 
+Searching for [James Meredith](https://en.wikipedia.org/wiki/James_Meredith) in the [Baruch Ticker](http://ticker.baruch.cuny.edu/) turns an editorial on page 3 of the [November 20, 1962](http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf) issue.^[The Baruch Ticker homepage has numerous HTML5 validation errors.]
 
-Searching for [James Meredith](https://en.wikipedia.org/wiki/James_Meredith) in the [Baruch Ticker](http://ticker.baruch.cuny.edu/) turns an editorial on page 3 of the [November 20, 1962](http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf) issue.
+We can do this by scraping the search page for results.
+
+```{r}
+uastring <- "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
+baseurl <- "http://ticker.baruch.cuny.edu/" 
+session <- 
+  baseurl %>%
+  html_session(user_agent(uastring))
+form <- session %>%
+  # index page has malformed forms it seems so selecting form by xpath instead
+  html_node(xpath = '//*/form') %>%
+  html_form
+form <- set_values(form, 
+                   'data[Search][keywords]' = "James Meredith",
+                   'data[Search][field]' = "fulltext")
+results_session <- submit_form(session, 
+                             form, 
+                             user_agent(uastring))
+results_urls <- 
+  results_session %>% 
+  html_nodes(xpath='//*/div[@id="search_results_div"]/div[@class="results"]/div[contains(@class,"result_")]/div[@class="result_title"]/a') %>%
+  html_attr("href") %>%
+  str_replace("#.*$", "")
+results_contexts <-
+  results_session %>% 
+  html_nodes(xpath='//*/div[@id="search_results_div"]/div[@class="results"]/div/div[@class="context"]') %>%
+  html_text
+results <- tibble(url = results_urls,
+                  context = results_contexts)
+```
+
+Though there are 13 results, only one of them actually contains the "James" and "Meredith" contiguously. And, the only other result relevant to our query, actually has erroneously recognized "J a m e s" (with inserted spaces) immediately before "Meredith", but "James" elsewhere on the page.
+
+```{r}
+results %>%
+  mutate(
+    extract = str_extract(context, ".{10}Meredith")
+  ) %>%
+  select(url, extract)
+```
+
 
 ```{r}
 pdfpath <- tempfile("sample.pdf")
@@ -25,10 +70,17 @@ png::writePNG(page, pngpath)
 knitr::include_graphics(pngpath)
 ```
 
+As is apparent from this page, any OCR technology would have difficult with such scans. Even so, my original search for "James Meredith" through the web search interface did turn this article up. Let's confirm that the text extracted from the PDF, in this case using the `pdftools` package, has this string. Unfortunately, the full name does not match. 
+
 ```{r}
-pagetext <-  pdftools::pdf_text(pdfpath)[3] 
+pagetext <- pdftools::pdf_text(pdfpath)[3] 
 pagetext %>%
-  stringr::str_sub(10000, 12500) %>%
+  str_detect("James Meredith")
+```
+
+```{r}
+pagetext %>%
+  str_sub(10000, 12500) %>%
   cat
 ```
 
