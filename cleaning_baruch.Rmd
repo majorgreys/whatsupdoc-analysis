@@ -1,5 +1,5 @@
 ---
-title: "Getting clean data"
+title: "What's Up Doc? Adventures in searching digitized archival collections"
 output:
   html_document: default
   html_notebook: default
@@ -7,25 +7,36 @@ output:
 
 ```{r setup}
 library(tidyverse)
-library(abbyyR)
 library(stringr)
 library(rvest)
 library(httr)
-library(urltools)
 ```
 
-Searching for [James Meredith](https://en.wikipedia.org/wiki/James_Meredith) in the [Baruch Ticker](http://ticker.baruch.cuny.edu/) turns an editorial on page 3 of the [November 20, 1962](http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf) issue.^[The Baruch Ticker homepage has numerous HTML5 validation errors.]
+## Problems in searching digital archival collections
 
-We can do this by scraping the search page for results.
+As a doctoral student studying history, I have been frustrated when archival collections are difficult to access. They often require travel, something I have difficulty planning with a daughter and limited funding. Fortunately, many of my archival sources are available closer to home, at the libraries of the City University of New York, the subject of my dissertation. However, accessing archives then becomes a slow and uneven process of navigating out-of-date finding aids and bureaucracy. 
+
+My habit has been to scan or photograph as many of the primary documents I find related to my research questions. This is partly a result of my fear of missing out on a piece of evidence I don't take not of in my research journal. I also do this because I hope these primary document could later be converted to searchable PDFs, over which I could efficiently search and categorize primary research materials for my own further research or for others interested in the same primary materials. 
+
+If I am lucky, a collection has already been digitized. I am thinking specifically here of how even digitized archival collections are difficult to process. This can potentially save me time, allowing me to avoid the more tedious task of reading document after document from an archive because the collection can be searched by some key terms, but this has proven a mixed bag. Digitized documents might have poor quality scans or the scans have poor quality searchable content. While I can control my own process for digitizing, in the case of collections already digitized, I needed less than ideal solutions that would improve the quality of the searchable content. 
+
+In this post, I will illustrate the sort of errors in optical character recognition (OCR) that I have found in my archival research and one workaround I have used with some success ([Abbyy](https://www.abbyy.com)). The source material I will focus on are digitized historical newspapers, specifically those produced by students at CUNY. In the spirit of open digital scholarship, I have included R source code I used to analyze the problem.
+
+Recently, as I was writing an essay on the relationship of CUNY students to the civil rights movement, I attempted to search for mentions of important people and events. One such individual was [James Meredith](https://en.wikipedia.org/wiki/James_Meredith), whose barring from admission by the University of Alabama was national news. One of my sources, the [Baruch Ticker](http://ticker.baruch.cuny.edu/) conveniently has an online search interface, which I decided to use for my query. A fulltext search for "James Meredith" turned up an editorial on page 3 of the [November 20, 1962](http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf) issue. But the results proved unreliable.
+
+## Scraping the data
+
+As I wanted to automate the process of searching for key terms to some extent, I decided to scrape the information from the web search interface. I used the [rvest](https://github.com/hadley/rvest) and identified XPaths from the search result to query and extract results.
 
 ```{r}
+# set user agent string to make sure web server replies with full page
 uastring <- "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
 baseurl <- "http://ticker.baruch.cuny.edu/" 
 session <- 
   baseurl %>%
   html_session(user_agent(uastring))
 form <- session %>%
-  # index page has malformed forms it seems so selecting form by xpath instead
+  # index page has malformed forms so I cannot directly use html_form on the session
   html_node(xpath = '//*/form') %>%
   html_form
 form <- set_values(form, 
@@ -36,8 +47,10 @@ results_session <- submit_form(session,
                              user_agent(uastring))
 results_urls <- 
   results_session %>% 
+  # the search result page unfortunately has a complicated structure
   html_nodes(xpath='//*/div[@id="search_results_div"]/div[@class="results"]/div[contains(@class,"result_")]/div[@class="result_title"]/a') %>%
   html_attr("href") %>%
+  # remove the query string that is appended to the pdf url
   str_replace("#.*$", "")
 results_contexts <-
   results_session %>% 
@@ -47,86 +60,102 @@ results <- tibble(url = results_urls,
                   context = results_contexts)
 ```
 
-Though there are 13 results, only one of them actually contains the "James" and "Meredith" contiguously. And, the only other result relevant to our query, actually has erroneously recognized "J a m e s" (with inserted spaces) immediately before "Meredith", but "James" elsewhere on the page.
+Though there are 13 results, only one of them actually contains the exact phrase "James Meredith" contiguously. The only other result relevant to our query actually was erroneously recognized as "J a m e s Meredith" (with inserted spaces), but "James" was recognized elsewhere on the page.
 
 ```{r}
 results %>%
   mutate(
+    # extract the phrase and the ten characters before
     extract = str_extract(context, ".{10}Meredith")
   ) %>%
   select(url, extract)
 ```
 
+## Problem of text quality
 
-```{r}
-pdfpath <- tempfile("sample.pdf")
-download.file('http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf', pdfpath, mode='wb')
-```
+Note that `ticker_19621010.pdf` was the document that matched when searching "James Meredith" but only because "James" had occurred elsewhere in the document and not immediately preceding "Meredith". We will now more closely examine the text quality of that pdf to understand why this problem occurred.
+
+I used the [pdftools](https://github.com/ropensci/pdftools) package to extract the text from the PDF. Behind the scenes, this package is using the [poppler](https://poppler.freedesktop.org/) library, commonly used on Linux systems.
 
 ```{r out.width="400px"}
-pngpath <- tempfile("sample.png")
-page <- pdftools::pdf_render_page(pdfpath, page = 3)
-png::writePNG(page, pngpath)
-knitr::include_graphics(pngpath)
+pdffile <- tempfile("")
+curl::curl_download('http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf', pdffile)
+page <- pdftools::pdf_render_page(pdffile, page = 3)
+pngfile <- tempfile()
+png::writePNG(page, pngfile)
+knitr::include_graphics(pngfile)
 ```
 
-As is apparent from this page, any OCR technology would have difficult with such scans. Even so, my original search for "James Meredith" through the web search interface did turn this article up. Let's confirm that the text extracted from the PDF, in this case using the `pdftools` package, has this string. Unfortunately, the full name does not match. 
+As is apparent from the above image, any OCR technology would have difficult with such scans. The scan has lines across in random places and some of the text is almost unreadable. Let's try to confirm that the text extracted from the PDF has the string "James Meredith".
+
+We first confirm that "Meredith" occurs in the text extracted. But the quality of the PDF is such that we find only two of the three occurrences of Meredith, once in the header, and another in the second paragraph. Missing in the results is the "Meredith" immediately following "James" in the first paragraph. 
 
 ```{r}
-pagetext <- pdftools::pdf_text(pdfpath)[3] 
+pagetext <- pdftools::pdf_text(pdffile)[3] 
 pagetext %>%
-  str_detect("James Meredith")
+  str_extract_all(".{10}Meredith.{10}")
 ```
 
+One problem is that there are unknown characters in the output. But a more basic problem in the text becomes apparent when we look at a slice of the data. We quickly find how often spaces (" ") are inserted into the extracted text. Any attempt at tokenizing this text would prove difficult because of the poor quality of the source data.
+
 ```{r}
 pagetext %>%
+  # grab some random window of 2500 characters
   str_sub(10000, 12500) %>%
+  str_wrap(80) %>%
   cat
 ```
 
+One solution would be to attempt to repair this text using a set of simple rewrite rules. For instance, if there is a series of characters separated by spaces, we could check to see whether removing the spaces would yield a valid word. But the original motivation for this query was to find references to an individual, and we wouldn't easily be able to decide if the word yielded was a valid word if that word in fact is a proper name. So instead I will show how we can reconvert the PDF to a searchable PDF using an alternative OCR technology.
+
+## Re-processing documents with Abbyy 
+
+Before processing the document page with Abbyy, it is helpful to highlight that the document we are examining is black and white. What might have been faint marks on the scan in a color or grayscale image become lines that cut across the page. The choice to give users access to the black and white version of the scans could make sense given how the size of grayscale and color PDFs would necessarily be larger. Size certainly matters for the institution hosting the files, be it the storage consumed by a collection or the network bandwidth used when sending those files. But for the academic researchers, such a decision forces them to use smaller PDFs at the expense of quality. Being that archives go through a length and expensive process to digitize material, I would hope they maintain full quality, color scans that could be used for future re-processing as OCR technology improves.
+
+Given these reservations, I was still pleased with the results from Abbyy. I have been using their desktop application, [FineReader](https://www.abbyy.com/en-eu/finereader/), for a while now, and would certainly recommend it to all academic researchers working with digitized primary documents. But here I wanted to explore features that Abbyy only provides through its SDK, which is available with through the [FineReader Engine](https://www.abbyy.com/en-us/ocr-sdk/) as well as the [Cloud SDK](http://ocrsdk.com/). I chose to give the web api a try since there is a trial package of 50 free pages, which was plenty for my purposes in this exercise. 
+
+I made use of the [abbyyR](https://github.com/soodoku/abbyyR) package to easily call the web api. The developers of the package provide a straightforward [example](http://soodoku.github.io/abbyyR/articles/example.html) for using the library. I set environment variables for the application name and password that I created in the Cloud SDK.
+
 ```{r}
-pagetext %>%
-  stringr::str_split(" ") %>%
-  unlist %>%
-  length
+library(abbyyR)
+setapp(c(Sys.getenv('ABBYYSDK_APP'), Sys.getenv('ABBYYSDK_PW')))
+getAppInfo()
 ```
 
-```{r}
-pagetext %>%
-  stringr::str_split(" ") %>%
-  unlist %>% {
-    tibble(
-      token = .,
-      len = map(., length) %>% unlist
-    )
-  } %>%
-  group_by(token) %>%
-  count %>%
-  arrange(-n) %>%
-  head(30)
-```
+I will submit the image of page 3 to be processed, which creates a task that I can monitor till it is complete.
 
 ```{r}
-pagetext %>%
-  stringr::str_split("\n") %>%
-  unlist %>%
-  head(3) %>%
-  stringr::str_wrap(80)
-```
-
-
-
-```{r}
-pagetext %>%
-  stringr::str_split("\r\n") %>%
-  unlist %>% {
-    tibble(
-      line = .,
-      len = stringr::str_length(stringr::str_trim(.))
-    )
+processImage(file_path = pngfile)
+# keep on checking if task is finished, waiting for 5 seconds in case it isn't
+i <- 0
+while(i < 1){
+  i <- nrow(listFinishedTasks())
+  if (i == 1){
+    print("All Done!")
+    break;
   }
-  group_by(len) %>%
-  count %>%
-  arrange(-len) %>%
-  head(30)
+  Sys.sleep(5)
+}
+```
+
+Once the processing is completed (which took about 90 seconds), the file can be downloaded and we can extract the text as we did above. We notice immediately that we are now getting three matches for "Meredith" rather than just two and that in this output we do have the exact phrase "James Meredith". Great!
+
+```{r}
+finishedlist <- listFinishedTasks()
+resultUrl <- finishedlist$resultUrl %>% as.character()
+abbyyFile <- tempfile()
+curl::curl_download(resultUrl, abbyyFile)
+abbyyText <- read_file(abbyyFile)
+abbyyText %>%
+  str_extract_all(".{10}Meredith.{10}")
+```
+
+If we examine a slice of the text, we again see a vast improvement over the quality of the original document. However, there are still many errors in the text output that a human reader could likely fix. But we will leave that problem for another time.
+
+```{r}
+abbyyText %>%
+  # grab some random window of 2500 characters
+  str_sub(10000, 12500) %>%
+  str_wrap(80) %>%
+  cat
 ```
