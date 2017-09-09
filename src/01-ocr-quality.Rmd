@@ -22,6 +22,7 @@ Recently, as I was writing an essay on the relationship of CUNY students to the 
 As I wanted to automate the process of searching for key terms to some extent, I decided to scrape the information from the web search interface. I used the [rvest](https://github.com/hadley/rvest) and identified XPaths from the search result to query and extract results.
 
 ```{r setup, echo=TRUE, warning=FALSE, message=FALSE, results='hide'}
+source('packrat/init.R')
 library(tidyverse)
 library(stringr)
 library(rvest)
@@ -85,8 +86,6 @@ page <- pdftools::pdf_render_page(pdffile, page = 3)
 pngfile <- tempfile()
 png::writePNG(page, pngfile)
 load.image(pngfile) %>% plot
-# knitr::include_graphics(pngfile)
-# plot(page)
 ```
 
 As is apparent from the above image, any OCR technology would have difficult with such scans. The scan has lines across in random places and some of the text is almost unreadable. Let's try to confirm that the text extracted from the PDF has the string "James Meredith".
