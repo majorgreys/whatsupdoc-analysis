@@ -1,34 +1,20 @@
 ---
-title: "Adventures in searching digitized archival collections"
+title: "OCR Quality"
 output:
   md_document: 
     variant: markdown_github
   html_document: default
 ---
 
-As a doctoral student studying history, I have been regularly frustrated when archival collections are difficult to access. They often require travel, something I have difficulty planning with a daughter and limited funding. Fortunately, many of my archival sources are available closer to home, at the libraries of the City University of New York, the subject of my dissertation. However, accessing archives then becomes a slow and uneven process of navigating out-of-date finding aids and bureaucracy. 
-
-My habit has been to scan or photograph as many of the primary documents I find related to my research questions. This is partly a result of my fear of missing out on a piece of evidence I don't take not of in my research journal. I also do this because I hope these primary document could later be converted to searchable PDFs, over which I could efficiently search and categorize primary research materials for my own further research or for others interested in the same primary materials. 
-
-If I am lucky, a collection has already been digitized. I am thinking specifically here of how even digitized archival collections are difficult to process. This can potentially save me time, allowing me to avoid the more tedious task of reading document after document from an archive because the collection can be searched by some key terms, but this has proven a mixed bag. Digitized documents might have poor quality scans or the scans have poor quality searchable content. While I can control my own process for digitizing, in the case of collections already digitized, I needed less than ideal solutions that would improve the quality of the searchable content. 
-
-In this post, I will illustrate the sort of errors in optical character recognition (OCR) that I have found in my archival research and one workaround I have used with some success ([Abbyy](https://www.abbyy.com)). The source material I will focus on are digitized historical newspapers, specifically those produced by students at CUNY. In the spirit of open digital scholarship, I have included R source code I used to analyze the problem.
-
-## Scraping data then cleaning it
-
-Recently, as I was writing an essay on the relationship of CUNY students to the civil rights movement, I attempted to search for mentions of important people and events. One such individual was [James Meredith](https://en.wikipedia.org/wiki/James_Meredith), whose barring from admission by the University of Alabama was national news. One of my sources, the [Baruch Ticker](http://ticker.baruch.cuny.edu/) conveniently has an online search interface, which I decided to use for my query. A fulltext search for "James Meredith" turned up an editorial on page 3 of the [November 20, 1962](http://ticker.baruch.cuny.edu/files/articles/ticker_19621120.pdf) issue. But the results proved unreliable.
-
-
-As I wanted to automate the process of searching for key terms to some extent, I decided to scrape the information from the web search interface. I used the [rvest](https://github.com/hadley/rvest) and identified XPaths from the search result to query and extract results.
-
 ```{r setup, echo=TRUE, warning=FALSE, message=FALSE, results='hide'}
-source('packrat/init.R')
 library(tidyverse)
 library(stringr)
 library(rvest)
 library(httr)
 library(imager)
 ```
+
+## Scraping data then cleaning it
 
 ```{r}
 # set user agent string to make sure web server replies with full page
@@ -171,12 +157,9 @@ For now, one useful piece of information that can be pulled out of the Abbyy out
 First, let's crop out the article. The dimensions for such a crop were arrived at by visually approximating where the editorial appears on the page. Of course, this is not a process that would be easily reproducible by a computer program.
 
 ```{r out.width="400px"}
-library(imager)
-cropped <- tempfile(fileext=".png")
 load.image(pngfile) %>% 
   imsub(x < (2466 / 3), y > (1473 / 2)) %>% 
-  save.image(cropped)
-knitr::include_graphics(cropped)
+  plot
 ```
 
 The text extracted from the original clearly did not break distinguish between the text of the editorial and the text of the letters to its right.
@@ -185,13 +168,13 @@ The text extracted from the original clearly did not break distinguish between t
 pagetext %>% str_extract("Meredith.{100}")
 ```
 
-Did the output of the Abbyy Cloud SDK fare any better with the headline? 
+Did the output of the Abbyy Cloud SDK fare any better with the headline? Not so much.
 
 ```{r}
 abbyyText %>% str_extract("Meredith.{100}")
-```
+``
 
-However, the output text from the desktop FineReader proved far better, with the article seeming to be segmented properly.
+Interestingly, the output text from my desktop FineReader 14 proved far better, with the article seeming to be segmented properly.
 
 ```
 Meredith
